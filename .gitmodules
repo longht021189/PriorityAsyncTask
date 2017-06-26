@@ -1,6 +1,0 @@
-[submodule "Samples/Grafika"]
-	path = Samples/Grafika
-	url = https://github.com/google/grafika.git
-[submodule "Samples/Architecture-Template"]
-	path = Samples/Architecture-Template
-	url = https://github.com/googlesamples/android-architecture.git
