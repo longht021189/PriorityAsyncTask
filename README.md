@@ -1,2 +1,0 @@
-# PriorityAsyncTask
-Extends from AsyncTask
