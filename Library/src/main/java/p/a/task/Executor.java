@@ -1,5 +1,6 @@
 package p.a.task;
 
+import android.os.Handler;
 import android.support.annotation.NonNull;
 
 import java.util.concurrent.RejectedExecutionException;
@@ -9,21 +10,51 @@ import java.util.concurrent.RejectedExecutionException;
  * Date: 7/9/17.
  */
 
-public abstract class Executor implements Contract.Executor {
+public class Executor implements Contract.Executor {
 
     /** Scheduler List */
     private final SchedulerList mSchedulerList;
     /** Default Scheduler */
     private final DefaultScheduler mDefaultScheduler;
+    /** Attach Command into Main Thread */
+    private Contract.Helper mMainHelper;
+    /** Attach Command into Background Thread */
+    private Contract.Helper mBackgroundHelper;
 
     /**
      * Default Constructor
      */
-    public Executor() {
+    private Executor() {
         mDefaultScheduler = new DefaultScheduler();
 
         mSchedulerList = new SchedulerList();
         mSchedulerList.add(mDefaultScheduler);
+    }
+
+    /**
+     * Constructor
+     * @param main       Main Thread
+     * @param background Background Thread
+     */
+    public Executor(@NonNull Handler main,
+                    @NonNull java.util.concurrent.Executor background) {
+        this();
+
+        mMainHelper = new Contract.HandlerHelper(main);
+        mBackgroundHelper = new Contract.ExecutorHelper(background);
+    }
+
+    /**
+     * Constructor
+     * @param main       Main Thread
+     * @param background Background Thread
+     */
+    public Executor(@NonNull java.util.concurrent.Executor main,
+                    @NonNull java.util.concurrent.Executor background) {
+        this();
+
+        mMainHelper = new Contract.ExecutorHelper(main);
+        mBackgroundHelper = new Contract.ExecutorHelper(background);
     }
 
     /**
@@ -39,7 +70,9 @@ public abstract class Executor implements Contract.Executor {
     @Override
     public void execute(@NonNull Runnable command) {
         if (command instanceof Scheduler) {
-            mSchedulerList.add((Scheduler) command);
+            if (mSchedulerList.add((Scheduler) command)) {
+                // TODO Add more info
+            }
         }
         else {
             mDefaultScheduler.add(command);

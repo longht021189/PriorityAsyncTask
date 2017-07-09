@@ -164,6 +164,22 @@ public class SchedulerListTest {
         }
 
         /**
+         * Runs before {@link #run()}.
+         */
+        @Override
+        public void onPreExecute() {
+
+        }
+
+        /**
+         * Runs after {@link #run()}
+         */
+        @Override
+        public void onPostExecute() {
+
+        }
+
+        /**
          * Return Priority for Scheduler
          *
          * @return Integer, must constant, because it's calculated 1 time
