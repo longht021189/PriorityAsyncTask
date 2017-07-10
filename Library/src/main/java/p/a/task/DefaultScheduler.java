@@ -1,7 +1,6 @@
 package p.a.task;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.ArrayDeque;
 
 /**
  * Created by Huynh Thanh Long.
@@ -11,14 +10,14 @@ import java.util.List;
 final class DefaultScheduler implements Contract.Runnable {
 
     /** Task List */
-    private final List<Runnable> mTasks = new ArrayList<>();
+    private final ArrayDeque<Runnable> mTasks = new ArrayDeque<>();
 
     /**
      * Appends the specified element to the end of this list (optional
      * operation).
      */
     public boolean add(Runnable scheduler) {
-        return mTasks.add(scheduler);
+        return mTasks.offer(scheduler);
     }
 
     /**
@@ -28,6 +27,7 @@ final class DefaultScheduler implements Contract.Runnable {
      *
      * @return the number of elements in this list
      */
+    @Override
     public int size() {
         return mTasks.size();
     }
@@ -52,7 +52,10 @@ final class DefaultScheduler implements Contract.Runnable {
      */
     @Override
     public void run() {
-
+        Runnable task;
+        if ((task = mTasks.poll()) != null) {
+            task.run();
+        }
     }
 
     /**

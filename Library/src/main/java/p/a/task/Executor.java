@@ -12,7 +12,7 @@ import java.util.concurrent.RejectedExecutionException;
  * Date: 7/9/17.
  */
 
-public class Executor implements Contract.Executor {
+public class Executor implements Contract.Executor, Runnable {
 
     /** Scheduler List */
     private final SchedulerList mSchedulerList;
@@ -20,11 +20,13 @@ public class Executor implements Contract.Executor {
     private final DefaultScheduler mDefaultScheduler;
     /** Scheduler Status List */
     private final Map<Contract.Runnable, Status> mSchedulerStatus;
+    /** Locker for Sync Thread */
+    private final Object mLocker;
 
     /** Pool Worker Size, It must correct with {@link #mBackgroundHelper} */
     private int mPoolSize;
     /** Pool Worker is Running */
-    private int mPoolCount;
+    private volatile int mPoolCount;
     /** Attach Command into Main Thread */
     private Contract.Helper mMainHelper;
     /** Attach Command into Background Thread */
@@ -34,6 +36,7 @@ public class Executor implements Contract.Executor {
      * Default Constructor
      */
     private Executor() {
+        mLocker = new Object();
         mDefaultScheduler = new DefaultScheduler();
 
         mSchedulerList = new SchedulerList();
@@ -85,17 +88,18 @@ public class Executor implements Contract.Executor {
      */
     @Override
     public void execute(@NonNull Runnable command) {
-        if (command instanceof Scheduler) {
-            Scheduler scheduler = (Scheduler) command;
+        synchronized (mLocker) {
+            if (command instanceof Scheduler) {
+                Scheduler scheduler = (Scheduler) command;
 
-            if (mSchedulerList.add(scheduler)) {
-                mSchedulerStatus.put(scheduler, Status.Doing_onPreExecute);
-                mMainHelper.post(new Contract.PostPreExecute(scheduler, this));
+                if (mSchedulerList.add(scheduler)) {
+                    mSchedulerStatus.put(scheduler, Status.Doing_onPreExecute);
+                    mMainHelper.post(new Contract.PostPreExecute(scheduler, this));
+                }
+            } else {
+                mDefaultScheduler.add(command);
+                onPreExecuteCallback(mDefaultScheduler);
             }
-        }
-        else {
-            mDefaultScheduler.add(command);
-            onPreExecuteCallback(mDefaultScheduler);
         }
     }
 
@@ -104,8 +108,10 @@ public class Executor implements Contract.Executor {
      */
     @Override
     public void onPreExecuteCallback(@NonNull Contract.Runnable command) {
-        mSchedulerStatus.put(command, Status.Await);
-        checkAndRunScheduler();
+        synchronized (mLocker) {
+            mSchedulerStatus.put(command, Status.Await);
+            checkAndRunScheduler();
+        }
     }
 
     /**
@@ -113,14 +119,16 @@ public class Executor implements Contract.Executor {
      */
     @Override
     public void onPostExecuteCallback(@NonNull Contract.Runnable command) {
-        if (command instanceof DefaultScheduler) {
-            mSchedulerStatus.remove(command);
-            mSchedulerList.remove(command);
-        } else {
-            mSchedulerStatus.put(command, Status.Await);
-        }
+        synchronized (mLocker) {
+            if (command instanceof DefaultScheduler) {
+                mSchedulerStatus.remove(command);
+                mSchedulerList.remove(command);
+            } else {
+                mSchedulerStatus.put(command, Status.Await);
+            }
 
-        checkAndRunScheduler();
+            checkAndRunScheduler();
+        }
     }
 
     /**
@@ -131,22 +139,72 @@ public class Executor implements Contract.Executor {
      *       Running  -> Doing_onPostExecute
      */
     private void checkAndRunScheduler() {
-        while (mPoolCount < mPoolSize) {
+        synchronized (mLocker) {
             int size = mSchedulerList.size();
+            int awaitCount = 0;
 
             for (int i = 0; i < size; ++i) {
                 Contract.Runnable runnable = mSchedulerList.get(i);
 
-                if (mSchedulerStatus.get(runnable) == Status.Await) {
-                    if (!(runnable instanceof DefaultScheduler)
-                            || ((DefaultScheduler)runnable).size() > 0) {
-                        mSchedulerStatus.put(runnable, Status.Running);
-                        mBackgroundHelper.post(new AttachSchedulerRunnable(runnable, this));
-                        mPoolCount++;
+                if (mSchedulerStatus.get(runnable) == Status.Await && runnable.size() > 0) {
+                    awaitCount++;
+                }
+            }
+
+            int min = Math.min(awaitCount, mPoolSize);
+
+            for (int i = mPoolCount; i < min; ++i) {
+                mBackgroundHelper.post(this);
+                mPoolCount++;
+            }
+        }
+    }
+
+    /**
+     * When an object implementing interface <code>Runnable</code> is used
+     * to create a thread, starting the thread causes the object's
+     * <code>run</code> method to be called in that separately executing
+     * thread.
+     * <p>
+     * The general contract of the method <code>run</code> is that it may
+     * take any action whatsoever.
+     *
+     * @see Thread#run()
+     */
+    @Override
+    public void run() {
+        Contract.Runnable runnable;
+
+        do {
+            runnable = null;
+
+            synchronized (mLocker) {
+                int size = mSchedulerList.size();
+
+                for (int i = 0; i < size; ++i) {
+                    Contract.Runnable r = mSchedulerList.get(i);
+
+                    if (mSchedulerStatus.get(r) == Status.Await && r.size() > 0) {
+                        runnable = r;
+                        break;
                     }
+                }
+
+                mSchedulerStatus.put(runnable, Status.Running);
+            }
+
+            if (runnable != null) {
+                runnable.run();
+
+                if (runnable.size() == 0) {
+
+                    runnable = null;
                 }
             }
         }
+        while (runnable != null);
+
+        mPoolCount--;
     }
 
     /**
@@ -157,32 +215,5 @@ public class Executor implements Contract.Executor {
         Doing_onPostExecute,
         Await,
         Running
-    }
-
-    private static class AttachSchedulerRunnable implements Runnable {
-
-        private final Contract.Runnable mRunnable;
-        private final Executor mExecutor;
-
-        AttachSchedulerRunnable(Contract.Runnable runnable, Executor executor) {
-            this.mRunnable = runnable;
-            this.mExecutor = executor;
-        }
-
-        /**
-         * When an object implementing interface <code>Runnable</code> is used
-         * to create a thread, starting the thread causes the object's
-         * <code>run</code> method to be called in that separately executing
-         * thread.
-         * <p>
-         * The general contract of the method <code>run</code> is that it may
-         * take any action whatsoever.
-         *
-         * @see Thread#run()
-         */
-        @Override
-        public void run() {
-            mRunnable.run();
-        }
     }
 }

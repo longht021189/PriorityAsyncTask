@@ -28,6 +28,15 @@ final class Contract {
          * @return Integer
          */
         int getPriority();
+
+        /**
+         * Returns the number of elements in this list.  If this list contains
+         * more than <tt>Integer.MAX_VALUE</tt> elements, returns
+         * <tt>Integer.MAX_VALUE</tt>.
+         *
+         * @return the number of elements in this list
+         */
+        int size();
     }
 
     interface Executor extends java.util.concurrent.Executor {

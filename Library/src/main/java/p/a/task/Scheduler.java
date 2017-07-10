@@ -1,6 +1,6 @@
 package p.a.task;
 
-import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
 
@@ -12,14 +12,14 @@ import java.util.List;
 public abstract class Scheduler implements Contract.Runnable {
 
     /** Task List */
-    private final List<Runnable> mTasks;
+    private final ArrayDeque<Runnable> mTasks;
 
     /**
      * Create Scheduler with Task Array
      * @param tasks Task Array
      */
     public Scheduler(Runnable... tasks) {
-        mTasks = new ArrayList<>();
+        mTasks = new ArrayDeque<>();
         Collections.addAll(mTasks, tasks);
     }
 
@@ -28,7 +28,7 @@ public abstract class Scheduler implements Contract.Runnable {
      * @param tasks Task List
      */
     public Scheduler(List<Runnable> tasks) {
-        mTasks = new ArrayList<>(tasks);
+        mTasks = new ArrayDeque<>(tasks);
     }
 
     /**
@@ -44,7 +44,10 @@ public abstract class Scheduler implements Contract.Runnable {
      */
     @Override
     public final void run() {
-
+        Runnable task;
+        if ((task = mTasks.poll()) != null) {
+            task.run();
+        }
     }
 
     /**
@@ -54,4 +57,16 @@ public abstract class Scheduler implements Contract.Runnable {
      */
     @Override
     public abstract int getPriority();
+
+    /**
+     * Returns the number of elements in this list.  If this list contains
+     * more than <tt>Integer.MAX_VALUE</tt> elements, returns
+     * <tt>Integer.MAX_VALUE</tt>.
+     *
+     * @return the number of elements in this list
+     */
+    @Override
+    public int size() {
+        return mTasks.size();
+    }
 }
