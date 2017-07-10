@@ -22,6 +22,17 @@ final class DefaultScheduler implements Contract.Runnable {
     }
 
     /**
+     * Returns the number of elements in this list.  If this list contains
+     * more than <tt>Integer.MAX_VALUE</tt> elements, returns
+     * <tt>Integer.MAX_VALUE</tt>.
+     *
+     * @return the number of elements in this list
+     */
+    public int size() {
+        return mTasks.size();
+    }
+
+    /**
      * Runs before {@link #run()}.
      * Empty method
      */
