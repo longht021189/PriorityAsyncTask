@@ -183,7 +183,7 @@ public class SchedulerListTest {
          * Return Priority for Scheduler
          *
          * @return Integer, must constant, because it's calculated 1 time
-         * When it's execute by {@link Executor}
+         * When it's execute by {@link Manager}
          */
         @Override
         public int getPriority() {

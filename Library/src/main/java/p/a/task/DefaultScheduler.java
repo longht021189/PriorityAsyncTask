@@ -28,7 +28,7 @@ final class DefaultScheduler implements Contract.Runnable {
      * @return the number of elements in this list
      */
     @Override
-    public int size() {
+    public final int size() {
         return mTasks.size();
     }
 

@@ -53,7 +53,7 @@ public abstract class Scheduler implements Contract.Runnable {
     /**
      * Return Priority for Scheduler
      * @return Integer, must constant, because it's calculated 1 time
-     *         When it's execute by {@link Executor}
+     *         When it's execute by {@link Manager}
      */
     @Override
     public abstract int getPriority();
@@ -66,7 +66,7 @@ public abstract class Scheduler implements Contract.Runnable {
      * @return the number of elements in this list
      */
     @Override
-    public int size() {
+    public final int size() {
         return mTasks.size();
     }
 }

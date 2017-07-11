@@ -5,6 +5,7 @@ import android.support.annotation.NonNull;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
@@ -12,7 +13,7 @@ import java.util.concurrent.RejectedExecutionException;
  * Date: 7/9/17.
  */
 
-public class Executor implements Contract.Executor, Runnable {
+public class Manager implements Contract.Executor, Runnable {
 
     /** Scheduler List */
     private final SchedulerList mSchedulerList;
@@ -20,8 +21,6 @@ public class Executor implements Contract.Executor, Runnable {
     private final DefaultScheduler mDefaultScheduler;
     /** Scheduler Status List */
     private final Map<Contract.Runnable, Status> mSchedulerStatus;
-    /** Locker for Sync Thread */
-    private final Object mLocker;
 
     /** Pool Worker Size, It must correct with {@link #mBackgroundHelper} */
     private int mPoolSize;
@@ -35,8 +34,7 @@ public class Executor implements Contract.Executor, Runnable {
     /**
      * Default Constructor
      */
-    private Executor() {
-        mLocker = new Object();
+    private Manager() {
         mDefaultScheduler = new DefaultScheduler();
 
         mSchedulerList = new SchedulerList();
@@ -53,8 +51,7 @@ public class Executor implements Contract.Executor, Runnable {
      * @param main       Main Thread
      * @param background Background Thread
      */
-    public Executor(int poolSize, @NonNull Handler main,
-                    @NonNull java.util.concurrent.Executor background) {
+    public Manager(int poolSize, @NonNull Handler main, @NonNull Executor background) {
         this();
 
         mPoolSize = poolSize;
@@ -67,8 +64,7 @@ public class Executor implements Contract.Executor, Runnable {
      * @param main       Main Thread
      * @param background Background Thread
      */
-    public Executor(int poolSize, @NonNull java.util.concurrent.Executor main,
-                    @NonNull java.util.concurrent.Executor background) {
+    public Manager(int poolSize, @NonNull Executor main, @NonNull Executor background) {
         this();
 
         mPoolSize = poolSize;
@@ -86,49 +82,45 @@ public class Executor implements Contract.Executor, Runnable {
      *                                    accepted for execution
      * @throws NullPointerException       if command is null
      */
-    @Override
+    @Override synchronized
     public void execute(@NonNull Runnable command) {
-        synchronized (mLocker) {
-            if (command instanceof Scheduler) {
-                Scheduler scheduler = (Scheduler) command;
+        if (command instanceof Scheduler) {
+            Scheduler scheduler = (Scheduler) command;
 
-                if (mSchedulerList.add(scheduler)) {
-                    mSchedulerStatus.put(scheduler, Status.Doing_onPreExecute);
-                    mMainHelper.post(new Contract.PostPreExecute(scheduler, this));
-                }
-            } else {
-                mDefaultScheduler.add(command);
-                onPreExecuteCallback(mDefaultScheduler);
+            if (mSchedulerList.add(scheduler)) {
+                mSchedulerStatus.put(scheduler, Status.Doing_onPreExecute);
+                mMainHelper.post(new Contract.PostPreExecute(scheduler, this));
             }
+        } else {
+            mDefaultScheduler.add(command);
+            onPreExecuteCallback(mDefaultScheduler);
         }
     }
 
     /**
      * Called when {@link Contract.Runnable#onPreExecute()} is finish
      */
-    @Override
+    @Override synchronized
     public void onPreExecuteCallback(@NonNull Contract.Runnable command) {
-        synchronized (mLocker) {
+        if (command != mDefaultScheduler) {
             mSchedulerStatus.put(command, Status.Await);
-            checkAndRunScheduler();
         }
+        checkAndRunScheduler();
     }
 
     /**
      * Called when {@link Contract.Runnable#onPostExecute()} is finish
      */
-    @Override
+    @Override synchronized
     public void onPostExecuteCallback(@NonNull Contract.Runnable command) {
-        synchronized (mLocker) {
-            if (command instanceof DefaultScheduler) {
-                mSchedulerStatus.remove(command);
-                mSchedulerList.remove(command);
-            } else {
-                mSchedulerStatus.put(command, Status.Await);
-            }
-
-            checkAndRunScheduler();
+        if (command instanceof DefaultScheduler) {
+            mSchedulerStatus.remove(command);
+            mSchedulerList.remove(command);
+        } else {
+            mSchedulerStatus.put(command, Status.Await);
         }
+
+        checkAndRunScheduler();
     }
 
     /**
@@ -138,25 +130,72 @@ public class Executor implements Contract.Executor, Runnable {
      * Note: Await   <-> Running,
      *       Running  -> Doing_onPostExecute
      */
+    synchronized
     private void checkAndRunScheduler() {
-        synchronized (mLocker) {
-            int size = mSchedulerList.size();
-            int awaitCount = 0;
+        // Check Pool is full
+        if (mPoolCount == mPoolSize) return;
 
-            for (int i = 0; i < size; ++i) {
-                Contract.Runnable runnable = mSchedulerList.get(i);
+        // Get Pool Count to Start
+        int size = mSchedulerList.size();
+        int awaitCount = 0;
 
-                if (mSchedulerStatus.get(runnable) == Status.Await && runnable.size() > 0) {
-                    awaitCount++;
-                }
+        for (int i = 0; i < size; ++i) {
+            Contract.Runnable runnable = mSchedulerList.get(i);
+
+            if (mSchedulerStatus.get(runnable) == Status.Await && runnable.size() > 0) {
+                awaitCount++;
             }
+        }
 
-            int min = Math.min(awaitCount, mPoolSize);
+        int min = Math.min(awaitCount, mPoolSize);
 
-            for (int i = mPoolCount; i < min; ++i) {
-                mBackgroundHelper.post(this);
-                mPoolCount++;
+        for (int i = mPoolCount; i < min; ++i) {
+            mPoolCount++;
+            mBackgroundHelper.post(this);
+        }
+    }
+
+    /**
+     * Get Top Scheduler Which has Await Status
+     * And Change its status to Running
+     * @return Runnable instance
+     */
+    synchronized
+    private Contract.Runnable getSchedulerForRun(Contract.Runnable prevScheduler) {
+        Contract.Runnable runnable = null;
+        int size = mSchedulerList.size();
+
+        for (int i = 0; i < size; ++i) {
+            Contract.Runnable r = mSchedulerList.get(i);
+
+            if (mSchedulerStatus.get(r) == Status.Await && r.size() > 0) {
+                runnable = r;
+                break;
             }
+        }
+
+        if (runnable != null) {
+            mSchedulerStatus.put(runnable, Status.Running);
+        }
+
+        if (prevScheduler != null && runnable != prevScheduler
+                && mSchedulerStatus.get(prevScheduler) == Status.Running) {
+            mSchedulerStatus.put(prevScheduler, Status.Await);
+        }
+
+        return runnable;
+    }
+
+    /**
+     * Post Post Execute
+     * @param runnable PostExecute
+     */
+    synchronized
+    private void postPostExecute(Contract.Runnable runnable) {
+        if (runnable != mDefaultScheduler) {
+            mSchedulerStatus.put(runnable, Status.Doing_onPostExecute);
+            mMainHelper.post(new Contract
+                    .PostPostExecute(runnable, this));
         }
     }
 
@@ -173,32 +212,16 @@ public class Executor implements Contract.Executor, Runnable {
      */
     @Override
     public void run() {
-        Contract.Runnable runnable;
+        Contract.Runnable runnable = null;
 
         do {
-            runnable = null;
-
-            synchronized (mLocker) {
-                int size = mSchedulerList.size();
-
-                for (int i = 0; i < size; ++i) {
-                    Contract.Runnable r = mSchedulerList.get(i);
-
-                    if (mSchedulerStatus.get(r) == Status.Await && r.size() > 0) {
-                        runnable = r;
-                        break;
-                    }
-                }
-
-                mSchedulerStatus.put(runnable, Status.Running);
-            }
+            runnable = getSchedulerForRun(runnable);
 
             if (runnable != null) {
                 runnable.run();
 
                 if (runnable.size() == 0) {
-
-                    runnable = null;
+                    postPostExecute(runnable);
                 }
             }
         }
