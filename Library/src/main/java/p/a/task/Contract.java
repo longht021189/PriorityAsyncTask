@@ -50,6 +50,23 @@ final class Contract {
          * Called when {@link Contract.Runnable#onPostExecute()} is finish
          */
         void onPostExecuteCallback(@NonNull Runnable command);
+
+        /**
+         * <p>Attempts to cancel execution of this task.  This attempt will
+         * fail if the task has already completed, already been cancelled,
+         * or could not be cancelled for some other reason. If successful,
+         * and this task has not started when <tt>cancel</tt> is called,
+         * this task should never run. If the task has already started,
+         * then the <tt>mayInterruptIfRunning</tt> parameter determines
+         * whether the thread executing this task should be interrupted in
+         * an attempt to stop the task.</p>
+         *
+         * @param mayInterruptIfRunning <tt>true</tt> if the thread executing this
+         *        task should be interrupted; otherwise, in-progress tasks are allowed
+         *        to complete.
+         * @param command Which is cancelled
+         */
+        void cancel(@NonNull java.lang.Runnable command, boolean mayInterruptIfRunning);
     }
 
     interface Helper {

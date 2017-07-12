@@ -1,8 +1,11 @@
 package p.a.task;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Created by Huynh Thanh Long.
@@ -13,6 +16,9 @@ public abstract class Scheduler implements Contract.Runnable {
 
     /** Task List */
     private final ArrayDeque<Runnable> mTasks;
+    /** Cancel Flag */
+    private final AtomicBoolean mCancelled = new AtomicBoolean(false);
+    private final AtomicReference<Thread> mThread = new AtomicReference<>();
 
     /**
      * Create Scheduler with Task Array
@@ -44,9 +50,25 @@ public abstract class Scheduler implements Contract.Runnable {
      */
     @Override
     public final void run() {
-        Runnable task;
-        if ((task = mTasks.poll()) != null) {
-            task.run();
+        synchronized (mCancelled) {
+            if (mCancelled.get()) {
+                return;
+            }
+        }
+
+        try {
+            synchronized (mThread) {
+                mThread.set(Thread.currentThread());
+            }
+
+            Runnable task;
+            if ((task = mTasks.poll()) != null) {
+                task.run();
+            }
+        } finally {
+            synchronized (mThread) {
+                mThread.set(null);
+            }
         }
     }
 
@@ -67,6 +89,40 @@ public abstract class Scheduler implements Contract.Runnable {
      */
     @Override
     public final int size() {
+        synchronized (mCancelled) {
+            if (mCancelled.get()) {
+                return 0;
+            }
+        }
+
         return mTasks.size();
+    }
+
+    /**
+     * <p>Attempts to cancel execution of this task.  This attempt will
+     * fail if the task has already completed, already been cancelled,
+     * or could not be cancelled for some other reason. If successful,
+     * and this task has not started when <tt>cancel</tt> is called,
+     * this task should never run. If the task has already started,
+     * then the <tt>mayInterruptIfRunning</tt> parameter determines
+     * whether the thread executing this task should be interrupted in
+     * an attempt to stop the task.</p>
+     *
+     * @param mayInterruptIfRunning <tt>true</tt> if the thread executing this
+     *        task should be interrupted; otherwise, in-progress tasks are allowed
+     *        to complete.
+     */
+    public final void cancel(boolean mayInterruptIfRunning) {
+        synchronized (mCancelled) {
+            mCancelled.set(true);
+        }
+
+        if (mayInterruptIfRunning) {
+            synchronized (mThread) {
+                if (mThread.get() != null) {
+                    mThread.get().interrupt();
+                }
+            }
+        }
     }
 }
